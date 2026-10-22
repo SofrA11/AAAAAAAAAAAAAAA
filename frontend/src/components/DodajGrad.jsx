@@ -1,0 +1,251 @@
+import { useState, useEffect } from "react";
+import { getDrzaveNazivi, postGrad } from "../api_config.jsx";
+
+export default function DodajGrad({ onCancel, onSuccess }) {
+  const [formData, setFormData] = useState({
+    naziv: "",
+    drzavaId: "",
+  });
+
+  const [drzave, setDrzave] = useState([]);
+  const [loadingDrzave, setLoadingDrzave] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState({ type: "", text: "" });
+
+  // Učitavanje država pri inicijalizaciji da bi korisnik izabrao u koju državu dodaje grad
+  useEffect(() => {
+    getDrzaveNazivi()
+      .then((data) => {
+        setDrzave(data);
+        setLoadingDrzave(false);
+      })
+      .catch((err) => {
+        console.error("Greška pri učitavanju država:", err);
+        setMessage({ type: "error", text: "Neuspešno učitavanje država." });
+        setLoadingDrzave(false);
+      });
+  }, []);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!formData.naziv.trim()) {
+      setMessage({ type: "error", text: "Naziv grada je obavezan!" });
+      return;
+    }
+    if (!formData.drzavaId) {
+      setMessage({
+        type: "error",
+        text: "Morate izabrati državu kojoj grad pripada!",
+      });
+      return;
+    }
+
+    setLoading(true);
+    setMessage({ type: "", text: "" });
+
+    const payload = {
+      naziv: formData.naziv.trim(),
+      drzavaId: Number(formData.drzavaId),
+    };
+
+    try {
+      await postGrad(payload);
+
+      setMessage({ type: "success", text: "Grad je uspešno dodat!" });
+      setTimeout(() => {
+        if (onSuccess) onSuccess();
+      }, 1500);
+    } catch (err) {
+      setMessage({
+        type: "error",
+        text: err.message || "Greška pri čuvanju grada.",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div style={styles.card}>
+      <div style={styles.headerContainer}>
+        <h2 style={styles.title}>➕ Dodaj novi grad</h2>
+        {onCancel && (
+          <button onClick={onCancel} style={styles.closeButton}>
+            ✕
+          </button>
+        )}
+      </div>
+
+      {message.text && (
+        <div
+          style={
+            message.type === "success" ? styles.successAlert : styles.errorAlert
+          }
+        >
+          {message.text}
+        </div>
+      )}
+
+      <form onSubmit={handleSubmit} style={styles.form}>
+        {/* Izbor države */}
+        <div style={styles.inputGroup}>
+          <label style={styles.label}>Država:</label>
+          <select
+            value={formData.drzavaId}
+            onChange={(e) =>
+              setFormData({ ...formData, drzavaId: e.target.value })
+            }
+            disabled={loadingDrzave}
+            style={styles.input}
+            required
+          >
+            <option value="">
+              {loadingDrzave
+                ? "Učitavanje država..."
+                : "-- Izaberite državu --"}
+            </option>
+            {drzave.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.naziv}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Naziv grada */}
+        <div style={styles.inputGroup}>
+          <label style={styles.label}>Naziv grada:</label>
+          <input
+            type="text"
+            placeholder="Npr. Beograd, Milano, Pariz..."
+            value={formData.naziv}
+            onChange={(e) =>
+              setFormData({ ...formData, naziv: e.target.value })
+            }
+            style={styles.input}
+            required
+          />
+        </div>
+
+        {/* Dugmad */}
+        <div style={styles.buttonContainer}>
+          {onCancel && (
+            <button
+              type="button"
+              onClick={onCancel}
+              style={styles.cancelButton}
+            >
+              Otkaži
+            </button>
+          )}
+          <button
+            type="submit"
+            disabled={loading || loadingDrzave}
+            style={styles.submitButton}
+          >
+            {loading ? "Čuvanje..." : "Sačuvaj grad"}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+const styles = {
+  card: {
+    maxWidth: "500px",
+    margin: "20px auto",
+    padding: "30px",
+    backgroundColor: "#ffffff",
+    borderRadius: "16px",
+    boxShadow: "0 10px 25px rgba(0,0,0,0.08)",
+    border: "1px solid #e5e7eb",
+  },
+  headerContainer: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: "20px",
+  },
+  title: {
+    margin: 0,
+    color: "#0f172a",
+    fontSize: "22px",
+    fontWeight: "700",
+  },
+  closeButton: {
+    background: "none",
+    border: "none",
+    fontSize: "18px",
+    cursor: "pointer",
+    color: "#64748b",
+  },
+  form: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "16px",
+  },
+  inputGroup: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "6px",
+    flex: 1,
+  },
+  label: {
+    fontSize: "14px",
+    fontWeight: "600",
+    color: "#334155",
+  },
+  input: {
+    padding: "10px 14px",
+    borderRadius: "8px",
+    border: "1px solid #cbd5e1",
+    fontSize: "14px",
+    outline: "none",
+    backgroundColor: "#ffffff",
+  },
+  buttonContainer: {
+    display: "flex",
+    justifyContent: "flex-end",
+    gap: "12px",
+    marginTop: "10px",
+  },
+  submitButton: {
+    padding: "12px 20px",
+    backgroundColor: "#2563eb",
+    color: "#ffffff",
+    border: "none",
+    borderRadius: "8px",
+    fontWeight: "600",
+    fontSize: "14px",
+    cursor: "pointer",
+  },
+  cancelButton: {
+    padding: "12px 20px",
+    backgroundColor: "#f1f5f9",
+    color: "#475569",
+    border: "none",
+    borderRadius: "8px",
+    fontWeight: "600",
+    fontSize: "14px",
+    cursor: "pointer",
+  },
+  successAlert: {
+    padding: "10px 14px",
+    backgroundColor: "#dcfce7",
+    color: "#166534",
+    borderRadius: "8px",
+    marginBottom: "15px",
+    fontSize: "14px",
+    fontWeight: "500",
+  },
+  errorAlert: {
+    padding: "10px 14px",
+    backgroundColor: "#fee2e2",
+    color: "#991b1b",
+    borderRadius: "8px",
+    marginBottom: "15px",
+    fontSize: "14px",
+    fontWeight: "500",
+  },
+};

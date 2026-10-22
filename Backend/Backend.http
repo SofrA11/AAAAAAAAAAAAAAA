@@ -1,0 +1,6 @@
+@Backend_HostAddress = API_URL
+
+GET {{Backend_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
