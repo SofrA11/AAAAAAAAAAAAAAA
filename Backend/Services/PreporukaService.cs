@@ -18,10 +18,20 @@ namespace Backend.Services
         #region Recomedations
         public async Task<List<PreporukaDto>> GetRecomedationsAsync(string activeUserId, int topN = 5, int topK = 5)
         {
-            bool uslov = true;
+            bool userBased;
             var users = await _context.Users.Select(u => u.Id).ToListAsync();
+
             var destIds = await _context.Destinacije.Select(d => d.Id).ToListAsync();
             var reviews = await _context.Reviews.ToListAsync();
+
+            if (users.Count > destIds.Count)
+            {
+                userBased = false; // Item-Based
+            }
+            else
+            {
+                userBased = true;  // User-Based
+            }
 
             int n = users.Count;
             int m = destIds.Count;
@@ -35,16 +45,22 @@ namespace Backend.Services
                 throw new ArgumentException("Aktivni korisnik ne postoji.");
 
             int activeUserIdx = userIndexMap[activeUserId];
-            List<PreporukaDto> rez;
-            if (uslov)
+
+            if (!HasUserAnyRatings(userItemMatrix, activeUserIdx))
             {
-                rez = await GetUserBasedRecommendationsAsync(activeUserIdx, userItemMatrix, userIndexMap, destIndexMap, topN, topK);
+                return await GetTopRatedDestinationsFallbackAsync(topK);
+            }
+
+            List<PreporukaDto> recomendations;
+            if (userBased)
+            {
+                recomendations = await GetUserBasedRecommendationsAsync(activeUserIdx, userItemMatrix, userIndexMap, destIndexMap, topN, topK);
             }
             else
-            {//itemBased
-                rez = await GetItemBasedRecommendationsAsync(activeUserIdx, userItemMatrix, userIndexMap, destIndexMap, topN, topK);
+            {
+                recomendations = await GetItemBasedRecommendationsAsync(activeUserIdx, userItemMatrix, userIndexMap, destIndexMap, topN, topK);
             }
-            return new List<PreporukaDto>();
+            return recomendations;
         }
         #endregion
         #region UserBased
@@ -200,7 +216,7 @@ namespace Backend.Services
 
             return similarities;
         }
-        private List<(int UserIndex, double Similarity)> CalculateItemSimilarities(double[,] matrix, int activeDestIdx)
+        private List<(int ItemIndex, double Similarity)> CalculateItemSimilarities(double[,] matrix, int activeDestIdx)
         {
             int n, m;
             n = matrix.GetLength(0);
@@ -215,9 +231,40 @@ namespace Backend.Services
 
             return similarities;
         }
+        private bool HasUserAnyRatings(double[,] matrix, int activeUserIdx)
+        {
+            int m = matrix.GetLength(1);
+            for (int j = 0; j < m; j++)
+            {
+                if (matrix[activeUserIdx, j] > 0)
+                {
+                    return true; // Našao je bar jednu ocenu
+                }
+            }
+            return false; // Nema nijednu ocenu (sve su 0)
+        }
 
+        // Fallback metoda za nove korisnike (Cold Start problem)
+        private async Task<List<PreporukaDto>> GetTopRatedDestinationsFallbackAsync(int topK)
+        {
+            var topDestinations = await _context.Destinacije
+                .OrderByDescending(d => d.AverageRating)
+                .Take(topK)
+                .ToListAsync();
+
+            return topDestinations
+                .Select(d => new PreporukaDto
+                {
+                    Naziv = d.Name,
+                    Description = d.Description,
+                    ImageUrl = d.ImageUrl,
+                    Tip = d.Type.ToString(),
+                    ProsecnaOcena = d.AverageRating,
+                    PredvidjenaOcena = d.AverageRating // Kod fallback-a predviđena ocena može biti sama prosečna ocena
+                })
+                .ToList();
+        }
         #endregion
-
 
         #region ItemBased
         public async Task<List<PreporukaDto>> GetItemBasedRecommendationsAsync(int activeUserIdx, double[,] userItemMatrix, Dictionary<string, int> userIndexMap, Dictionary<int, int> destIndexMap, int topN = 5, int topK = 5)
@@ -229,11 +276,6 @@ namespace Backend.Services
             // 2. Napravi nonRatedDestinations
             var nonRatedDestinations = GetNonRatedDestinations(userItemMatrix, activeUserIdx, m);
 
-            // 3. Izračunaj sličnosti i pronađi komšiluk
-            var similarities = CalculateItemSimilarities(userItemMatrix, activeUserIdx);//vektor slicnosti [0.25,0.5,0.09...]
-            var topNeighbors = similarities.OrderByDescending(s => s.Similarity).Take(topN).ToList();
-
-            double activeUserAvgRating = CalculateUserAverage(userItemMatrix, activeUserIdx);
             var recommendationsVector = new Dictionary<int, double>();
 
             // Računanje predviđenih ocena
@@ -241,25 +283,25 @@ namespace Backend.Services
             {
                 double brojilac = 0;
                 double imenilac = 0;
-
+                var similarities = CalculateItemSimilarities(userItemMatrix, dest);//vektor slicnosti [0.25,0.5,0.09...]
+                var topNeighbors = similarities.OrderByDescending(s => s.Similarity).Take(topN).ToList();
                 //Formula iz rada
                 foreach (var neighbor in topNeighbors)
                 {
-                    int k = neighbor.UserIndex;
+                    int k = neighbor.ItemIndex;
                     double sim = neighbor.Similarity;
 
-                    if (userItemMatrix[k, dest] > 0)
+                    if (userItemMatrix[activeUserIdx, k] > 0)
                     {
-                        double neighborAvg = CalculateUserAverage(userItemMatrix, k);
-                        brojilac += sim * (userItemMatrix[k, dest] - neighborAvg);
-                        imenilac += Math.Abs(sim);
+                        brojilac += sim * userItemMatrix[activeUserIdx, k];
+                        imenilac += Math.Abs(sim);//da li treba ABS?
                     }
                 }
 
-                double rez = activeUserAvgRating;
-                if (imenilac > 0)
+                double rez = 0.0;
+                if (imenilac != 0)
                 {
-                    rez = activeUserAvgRating + (brojilac / imenilac);
+                    rez = brojilac / imenilac;
                 }
                 //Kraj formule 
 
@@ -298,6 +340,7 @@ namespace Backend.Services
             for (int u = 0; u < n; u++)
             {
                 if (matrix[u, i1] == 0) continue;
+                if (matrix[u, i2] == 0) continue;
                 double userAvg = CalculateUserAverage(matrix, u);
                 double val1 = matrix[u, i1] - userAvg;
                 double val2 = matrix[u, i2] - userAvg;
@@ -312,6 +355,7 @@ namespace Backend.Services
 
         #endregion
         #region Staro
+        /*
         public async Task<List<PreporukaDto>> GetRecommendationsForUserAsync(string targetKorisnikId, int topN = 5)
         {
             var allReviews = await _context.Set<Review>()
@@ -559,6 +603,7 @@ namespace Backend.Services
 
             return topDestinations;
         }
+        */
         #endregion
     }
 }

@@ -30,8 +30,7 @@ namespace Backend.Controllers
                 return Unauthorized("Nije moguće identifikovati ulogovanog korisnika iz tokena.");
             }
 
-            var preporuke = await _preporukaService.GetRecommendationsForUserAsync(korisnikId, limit);
-            //var preporuke = await _preporukaService.GetRecommendationsAsync(korisnikId, limit);
+            var preporuke = await _preporukaService.GetRecomedationsAsync(korisnikId, limit);
             return Ok(preporuke);
         }
 
