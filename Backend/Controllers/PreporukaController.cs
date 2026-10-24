@@ -31,6 +31,7 @@ namespace Backend.Controllers
             }
 
             var preporuke = await _preporukaService.GetRecommendationsForUserAsync(korisnikId, limit);
+            //var preporuke = await _preporukaService.GetRecommendationsAsync(korisnikId, limit);
             return Ok(preporuke);
         }
 
