@@ -16,22 +16,12 @@ namespace Backend.Services
             _context = context;
         }
         #region Recomedations
-        public async Task<List<PreporukaDto>> GetRecomedationsAsync(string activeUserId, int topN = 5, int topK = 5)
+        public async Task<List<PreporukaDto>> GetRecommedationsAsync(string activeUserId, int topN = 5, int topK = 5)
         {
-            bool userBased;
             var users = await _context.Users.Select(u => u.Id).ToListAsync();
 
             var destIds = await _context.Destinacije.Select(d => d.Id).ToListAsync();
             var reviews = await _context.Reviews.ToListAsync();
-
-            if (users.Count > destIds.Count)
-            {
-                userBased = false; // Item-Based
-            }
-            else
-            {
-                userBased = true;  // User-Based
-            }
 
             int n = users.Count;
             int m = destIds.Count;
@@ -52,7 +42,7 @@ namespace Backend.Services
             }
 
             List<PreporukaDto> recomendations;
-            if (userBased)
+            if (users.Count < destIds.Count)
             {
                 recomendations = await GetUserBasedRecommendationsAsync(activeUserIdx, userItemMatrix, userIndexMap, destIndexMap, topN, topK);
             }
